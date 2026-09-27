@@ -19,9 +19,11 @@ from evolve import evolve
 from fixtures import DefendedAgent
 from payload import SURFACES
 
+REAL_SCANNER_SURFACES = ("tool_poisoning", "memory_injection", "rag_injection")
 
-def run_one(surface: str, seed: int, generations: int, population_size: int, use_reflection: bool) -> dict:
-    history, best = evolve(surface, generations, population_size, use_reflection, seed)
+
+def run_one(surface: str, seed: int, generations: int, population_size: int, use_reflection: bool, samples: int = 20) -> dict:
+    history, best = evolve(surface, generations, population_size, use_reflection, seed, samples=samples)
     target = 0.5
     gens_to_target = next((h["generation"] for h in history if h["mean_evasion_rate"] >= target), generations)
     return {
@@ -39,17 +41,48 @@ def main():
     parser.add_argument("--generations", type=int, default=15)
     parser.add_argument("--population", type=int, default=20)
     parser.add_argument("--out", type=str, default="data/experiment_results.json")
+    parser.add_argument(
+        "--samples", type=int, default=20,
+        help="Renders sampled per fitness evaluation. Lower this a lot with --real-scanners "
+             "(each render is a real subprocess call) -- e.g. 3-5, not the default 20.",
+    )
+    parser.add_argument(
+        "--surfaces", type=str, default=None,
+        help="Comma-separated subset of surfaces to run (default: all applicable ones).",
+    )
+    parser.add_argument(
+        "--real-scanners", action="store_true",
+        help=(
+            "Use the actual mcpaudit/memsentry/ragsentry CLIs (real_defender.RealScannerDefender) "
+            "instead of the naive blocklist stand-in. Each call is a real subprocess -- 2-3 orders "
+            "of magnitude slower than the in-memory check -- so this only runs the 3 surfaces that "
+            "have a real scanner mapping (prompt_injection has none, see real_defender.py), and you "
+            "should pass much smaller --seeds/--generations/--population than the bundled default."
+        ),
+    )
     args = parser.parse_args()
 
     from scipy import stats as scipy_stats
+
+    if args.real_scanners:
+        import evolve as evolve_module
+        from real_defender import RealScannerDefender
+        evolve_module.DefendedAgent = RealScannerDefender  # evolve.evolve() constructs DefendedAgent() with no args
+        surfaces = REAL_SCANNER_SURFACES
+    else:
+        surfaces = SURFACES
+
+    if args.surfaces:
+        requested = set(args.surfaces.split(","))
+        surfaces = tuple(s for s in surfaces if s in requested)
 
     full_report = {}
     print(f"{'Surface':<18}{'Metric':<32}{'Reflection':<20}{'Random':<20}{'p (Welch)':<12}p (M-W)")
     print("-" * 112)
 
-    for surface in SURFACES:
-        ref_rows = [run_one(surface, s, args.generations, args.population, True) for s in range(args.seeds)]
-        rnd_rows = [run_one(surface, s, args.generations, args.population, False) for s in range(args.seeds)]
+    for surface in surfaces:
+        ref_rows = [run_one(surface, s, args.generations, args.population, True, args.samples) for s in range(args.seeds)]
+        rnd_rows = [run_one(surface, s, args.generations, args.population, False, args.samples) for s in range(args.seeds)]
 
         surface_report = {"reflection": ref_rows, "random": rnd_rows, "metrics": {}}
 
@@ -74,6 +107,11 @@ def main():
 
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), args.out)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    if os.path.exists(out_path):
+        with open(out_path) as f:
+            existing = json.load(f)
+        existing.update(full_report)
+        full_report = existing
     with open(out_path, "w") as f:
         json.dump(full_report, f, indent=2)
     print(f"Full results written to: {out_path}")
