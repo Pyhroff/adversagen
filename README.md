@@ -26,7 +26,7 @@ Payloads combine goal phrasing with controlled obfuscation choices such as zero-
 
 Two mutation strategies are compared:
 
-- **Reflection** — nudges children toward the current high-fitness region.
+- **Reflection** — moves children toward the current high-fitness region.
 - **Random mutation** — preserves more exploration diversity.
 
 The project records measured evasion behavior rather than treating a successful payload as proof of scanner failure.
