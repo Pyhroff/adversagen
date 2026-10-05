@@ -18,18 +18,18 @@ Most scanners iterate on fixed payload lists.
 
 `adversagen` turns scanner weaknesses into an experimental search problem: it evolves payloads and compares mutation strategies against a defined defense interface.
 
-This is the **adversarial research layer of the Pyhroff AI-security portfolio** and intentionally remains a specialist experiment runner rather than an `aisec scan` module.
+It is the **adversarial research layer of the Pyhroff AI-security portfolio** and intentionally remains a specialist experiment runner rather than an `aisec scan` module.
 
 ## Research model
 
-Payloads are represented as genomes combining goal phrasing and controlled obfuscation choices such as zero-width characters, homoglyph substitution, synonym paraphrase, and indirection.
+Payloads combine goal phrasing with controlled obfuscation choices such as zero-width characters, homoglyph substitution, synonym paraphrase, and indirection.
 
 Two mutation strategies are compared:
 
 - **Reflection** — nudges children toward the current high-fitness region.
 - **Random mutation** — preserves more exploration diversity.
 
-The project records measured evasion behavior rather than treating a successful payload as a proof of scanner failure.
+The project records measured evasion behavior rather than treating a successful payload as proof of scanner failure.
 
 ## Real-scanner mode
 
@@ -47,11 +47,11 @@ The real-scanner mode is deliberately small because it invokes scanner binaries 
 
 **adversagen** is the attack-side evaluation loop used to discover gaps and regression cases.
 
-That separation keeps the umbrella focused on artifact scanning while preserving the full research workflow.
+That separation keeps the umbrella focused on artifact scanning while preserving the research workflow.
 
 ## Safety boundary
 
-Use only against your own fixtures, local test systems, or explicitly authorized defenses. The bundled experiments are controlled security research workloads.
+Use only against your own fixtures, local test systems, or explicitly authorized defenses.
 
 ## Development
 
