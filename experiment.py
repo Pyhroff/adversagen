@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Controlled experiment: does reflection-guided attack mutation actually
-find better evasions faster than random mutation, across all four attack
-surfaces? Same 30-seed methodology (Welch's t-test, Mann-Whitney U via
-scipy) as the session's other two projects, applied here to red-teaming
-instead of ecosystems or spam filters.
+"""Controlled reflection-vs-random red-team experiment.
 
-Usage:
-    python3 experiment.py --seeds 30 --generations 15 --population 20
+The experiment compares adaptive reflection-guided mutation with a random
+mutation control across attack surfaces. Fitness is estimated from repeated
+stochastic renders, with one cached score per individual per generation.
+
+The report includes dispersion, Welch/Mann-Whitney significance tests, and
+Cohen's d so statistical significance is not presented without an effect-size
+estimate.
 """
 from __future__ import annotations
 
@@ -16,7 +17,6 @@ import os
 import statistics
 
 from evolve import evolve
-from fixtures import DefendedAgent
 from payload import SURFACES
 
 REAL_SCANNER_SURFACES = ("tool_poisoning", "memory_injection", "rag_injection")
@@ -25,14 +25,27 @@ REAL_SCANNER_SURFACES = ("tool_poisoning", "memory_injection", "rag_injection")
 def run_one(surface: str, seed: int, generations: int, population_size: int, use_reflection: bool, samples: int = 20) -> dict:
     history, best = evolve(surface, generations, population_size, use_reflection, seed, samples=samples)
     target = 0.5
-    gens_to_target = next((h["generation"] for h in history if h["mean_evasion_rate"] >= target), generations)
+    reached = next((h["generation"] for h in history if h["mean_evasion_rate"] >= target), None)
     return {
         "seed": seed,
         "baseline_mean_evasion": history[0]["mean_evasion_rate"],
         "final_mean_evasion": history[-1]["mean_evasion_rate"],
         "final_best_evasion": history[-1]["best_evasion_rate"],
-        "generations_to_50pct_mean_evasion": gens_to_target,
+        "generations_to_50pct_mean_evasion": reached,
+        "target_50pct_reached": reached is not None,
     }
+
+
+def cohen_d(a: list[float], b: list[float]) -> float:
+    """Standardized mean difference using pooled sample standard deviation."""
+    if len(a) < 2 or len(b) < 2:
+        return float("nan")
+    a_mean, b_mean = statistics.fmean(a), statistics.fmean(b)
+    a_var, b_var = statistics.variance(a), statistics.variance(b)
+    pooled = ((len(a) - 1) * a_var + (len(b) - 1) * b_var) / (len(a) + len(b) - 2)
+    if pooled == 0:
+        return 0.0 if a_mean == b_mean else float("inf")
+    return (a_mean - b_mean) / pooled**0.5
 
 
 def main():
@@ -43,22 +56,13 @@ def main():
     parser.add_argument("--out", type=str, default="data/experiment_results.json")
     parser.add_argument(
         "--samples", type=int, default=20,
-        help="Renders sampled per fitness evaluation. Lower this a lot with --real-scanners "
-             "(each render is a real subprocess call) -- e.g. 3-5, not the default 20.",
+        help="Renders sampled per fitness evaluation. Lower this with --real-scanners "
+             "(each render is a real subprocess call), e.g. 3-5.",
     )
-    parser.add_argument(
-        "--surfaces", type=str, default=None,
-        help="Comma-separated subset of surfaces to run (default: all applicable ones).",
-    )
+    parser.add_argument("--surfaces", type=str, default=None, help="Comma-separated subset of surfaces to run.")
     parser.add_argument(
         "--real-scanners", action="store_true",
-        help=(
-            "Use the actual mcpaudit/memsentry/ragsentry CLIs (real_defender.RealScannerDefender) "
-            "instead of the naive blocklist stand-in. Each call is a real subprocess -- 2-3 orders "
-            "of magnitude slower than the in-memory check -- so this only runs the 3 surfaces that "
-            "have a real scanner mapping (prompt_injection has none, see real_defender.py), and you "
-            "should pass much smaller --seeds/--generations/--population than the bundled default."
-        ),
+        help="Use the actual mcpaudit/memsentry/ragsentry CLIs for their three mapped surfaces.",
     )
     args = parser.parse_args()
 
@@ -67,7 +71,7 @@ def main():
     if args.real_scanners:
         import evolve as evolve_module
         from real_defender import RealScannerDefender
-        evolve_module.DefendedAgent = RealScannerDefender  # evolve.evolve() constructs DefendedAgent() with no args
+        evolve_module.DefendedAgent = RealScannerDefender
         surfaces = REAL_SCANNER_SURFACES
     else:
         surfaces = SURFACES
@@ -77,8 +81,8 @@ def main():
         surfaces = tuple(s for s in surfaces if s in requested)
 
     full_report = {}
-    print(f"{'Surface':<18}{'Metric':<32}{'Reflection':<20}{'Random':<20}{'p (Welch)':<12}p (M-W)")
-    print("-" * 112)
+    print(f"{'Surface':<18}{'Metric':<32}{'Reflection':<20}{'Random':<20}{'p (Welch)':<12}{'p (M-W)':<12}{'Cohen d'}")
+    print("-" * 124)
 
     for surface in surfaces:
         ref_rows = [run_one(surface, s, args.generations, args.population, True, args.samples) for s in range(args.seeds)]
@@ -90,18 +94,28 @@ def main():
             ("final_best_evasion", "Final best-payload evasion rate"),
             ("generations_to_50pct_mean_evasion", "Generations to 50% mean evasion"),
         ):
-            ref_vals = [r[metric] for r in ref_rows]
-            rnd_vals = [r[metric] for r in rnd_rows]
+            ref_vals = [r[metric] for r in ref_rows if r[metric] is not None]
+            rnd_vals = [r[metric] for r in rnd_rows if r[metric] is not None]
             ref_m, ref_s = statistics.fmean(ref_vals), statistics.pstdev(ref_vals)
             rnd_m, rnd_s = statistics.fmean(rnd_vals), statistics.pstdev(rnd_vals)
-            t_stat, p_t = scipy_stats.ttest_ind(ref_vals, rnd_vals, equal_var=False)
-            u_stat, p_u = scipy_stats.mannwhitneyu(ref_vals, rnd_vals, alternative="two-sided")
-            print(f"{surface:<18}{label:<32}{ref_m:>6.2f} ± {ref_s:<11.2f}{rnd_m:>6.2f} ± {rnd_s:<11.2f}{p_t:<12.4f}{p_u:.4f}")
+            _, p_t = scipy_stats.ttest_ind(ref_vals, rnd_vals, equal_var=False)
+            _, p_u = scipy_stats.mannwhitneyu(ref_vals, rnd_vals, alternative="two-sided")
+            d = cohen_d(ref_vals, rnd_vals)
+
+            print(f"{surface:<18}{label:<32}{ref_m:>6.2f} ± {ref_s:<11.2f}{rnd_m:>6.2f} ± {rnd_s:<11.2f}{p_t:<12.4f}{p_u:<12.4f}{d:.3f}")
             surface_report["metrics"][metric] = {
                 "reflection_mean": ref_m, "reflection_std": ref_s,
                 "random_mean": rnd_m, "random_std": rnd_s,
                 "welch_p": p_t, "mannwhitney_p": p_u,
+                "cohen_d": d,
+                "reflection_n": len(ref_vals),
+                "random_n": len(rnd_vals),
             }
+
+        surface_report["target_50pct_reached"] = {
+            "reflection": sum(r["target_50pct_reached"] for r in ref_rows),
+            "random": sum(r["target_50pct_reached"] for r in rnd_rows),
+        }
         print()
         full_report[surface] = surface_report
 
