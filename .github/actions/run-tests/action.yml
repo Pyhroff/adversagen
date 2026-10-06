@@ -1,0 +1,13 @@
+name: Run adversagen tests
+description: Install adversagen test dependencies and run its test suite without repository checkout
+runs:
+  using: composite
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install -r "$GITHUB_ACTION_PATH/../../..//requirements.txt" pytest
+    - name: Run tests
+      shell: bash
+      run: |
+        python -m pytest "$GITHUB_ACTION_PATH/../../../tests/" -q --tb=short
