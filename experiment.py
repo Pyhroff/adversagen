@@ -96,11 +96,22 @@ def main():
         ):
             ref_vals = [r[metric] for r in ref_rows if r[metric] is not None]
             rnd_vals = [r[metric] for r in rnd_rows if r[metric] is not None]
-            ref_m, ref_s = statistics.fmean(ref_vals), statistics.pstdev(ref_vals)
-            rnd_m, rnd_s = statistics.fmean(rnd_vals), statistics.pstdev(rnd_vals)
-            _, p_t = scipy_stats.ttest_ind(ref_vals, rnd_vals, equal_var=False)
-            _, p_u = scipy_stats.mannwhitneyu(ref_vals, rnd_vals, alternative="two-sided")
-            d = cohen_d(ref_vals, rnd_vals)
+            if len(ref_vals) > 0:
+                ref_m, ref_s = statistics.fmean(ref_vals), statistics.pstdev(ref_vals)
+            else:
+                ref_m, ref_s = float('nan'), float('nan')
+
+            if len(rnd_vals) > 0:
+                rnd_m, rnd_s = statistics.fmean(rnd_vals), statistics.pstdev(rnd_vals)
+            else:
+                rnd_m, rnd_s = float('nan'), float('nan')
+
+            if len(ref_vals) > 1 and len(rnd_vals) > 1:
+                _, p_t = scipy_stats.ttest_ind(ref_vals, rnd_vals, equal_var=False)
+                _, p_u = scipy_stats.mannwhitneyu(ref_vals, rnd_vals, alternative="two-sided")
+                d = cohen_d(ref_vals, rnd_vals)
+            else:
+                p_t, p_u, d = float('nan'), float('nan'), float('nan')
 
             print(f"{surface:<18}{label:<32}{ref_m:>6.2f} ± {ref_s:<11.2f}{rnd_m:>6.2f} ± {rnd_s:<11.2f}{p_t:<12.4f}{p_u:<12.4f}{d:.3f}")
             surface_report["metrics"][metric] = {
