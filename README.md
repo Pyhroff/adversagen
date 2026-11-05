@@ -1,16 +1,10 @@
-# 🧬 adversagen
-
-<div align="center">
-
-**Adaptive red-team research for testing the resilience of AI-security scanners.**
+# adversagen
 
 [![CI](https://github.com/Pyhroff/adversagen/actions/workflows/ci.yml/badge.svg)](https://github.com/Pyhroff/adversagen/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-</div>
-
----
+**Adaptive red-team research for testing the resilience of AI-security scanners.**
 
 ## Overview
 
